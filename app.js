@@ -443,12 +443,15 @@ function openEntry(type) {
   elEntrySubmit.className = 'act act-wide ' + info.act;
   elChips.hidden = !info.withCategory;
 
+  // Внутри Telegram подтверждает его собственная кнопка — своя не нужна
+  elEntrySubmit.hidden = hasMainButton;
+
   elAmount.value = '';
   elNote.value = '';
   fitAmount();
 
   elEntryModal.hidden = false;
-  syncBackButton();
+  syncTelegramChrome();
   buzz();
 
   // Фокус ставим сразу, тем же нажатием — иначе айфон не покажет клавиатуру
@@ -458,29 +461,74 @@ function openEntry(type) {
 function closeEntry() {
   elEntryModal.hidden = true;
   elAmount.blur();
-  syncBackButton();
+  syncTelegramChrome();
 }
 
-/* Клавиатура закрывает низ экрана вместе с кнопкой «Записать».
-   Поджимаем окна ровно на её высоту — остальную работу делает CSS. */
+/* Клавиатура закрывает низ экрана. Поджимаем окна ровно на её высоту.
+
+   Внутри Telegram спрашиваем у самого Telegram: областью просмотра там
+   распоряжается он, и visualViewport про клавиатуру ничего не сообщает —
+   именно поэтому на айфоне кнопка «Записать» оставалась под клавиатурой.
+   В обычном браузере работает visualViewport. */
 function fitToKeyboard() {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  document.documentElement.style.setProperty('--keyboard', Math.round(covered) + 'px');
+  let covered = 0;
+
+  if (inTelegram && tg.viewportStableHeight && tg.viewportHeight) {
+    covered = tg.viewportStableHeight - tg.viewportHeight;
+  } else if (window.visualViewport) {
+    const vv = window.visualViewport;
+    covered = window.innerHeight - vv.height - vv.offsetTop;
+  }
+
+  document.documentElement.style.setProperty(
+    '--keyboard', Math.max(0, Math.round(covered)) + 'px'
+  );
 }
+
+if (inTelegram && tg.onEvent) tg.onEvent('viewportChanged', fitToKeyboard);
 
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', fitToKeyboard);
   window.visualViewport.addEventListener('scroll', fitToKeyboard);
 }
 
-// Внутри Telegram системная кнопка «Назад» закрывает открытое окно
-function syncBackButton() {
-  if (!inTelegram || !tg.BackButton) return;
-  if (!elEntryModal.hidden || !elCatModal.hidden) tg.BackButton.show();
-  else tg.BackButton.hide();
+// Достаёт цвет из палитры в style.css — нужен для родной кнопки Telegram
+function cssColor(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+
+/* Кнопки самого Telegram: «Назад» закрывает окно, а главная кнопка заменяет
+   «Записать». Её рисует Telegram поверх клавиатуры, поэтому спрятать её
+   клавиатура не может — в отличие от кнопки внутри страницы. */
+function syncTelegramChrome() {
+  if (!inTelegram) return;
+
+  const entryOpen = !elEntryModal.hidden;
+  const catOpen   = !elCatModal.hidden;
+
+  if (tg.BackButton) {
+    if (entryOpen || catOpen) tg.BackButton.show();
+    else tg.BackButton.hide();
+  }
+
+  if (!tg.MainButton) return;
+
+  // Пока сверху окно категорий, записывать нечего — убираем кнопку
+  if (entryOpen && !catOpen) {
+    const info = TYPE_INFO[entryType];
+    tg.MainButton.setParams({
+      text: 'Записать',
+      color: cssColor(info.mainColor),
+      text_color: cssColor(info.mainTextColor)
+    });
+    tg.MainButton.show();
+  } else {
+    tg.MainButton.hide();
+  }
+}
+
+// Есть ли у нас родная кнопка Telegram вместо кнопки внутри окна
+const hasMainButton = !!(inTelegram && tg.MainButton);
 
 
 // --- 6. Окно подтверждения и всплывающее сообщение ---
@@ -516,10 +564,22 @@ function toast(text) {
    act — каким выглядит подтверждение в окне записи
    withCategory — переводы между кошельками категории не имеют */
 const TYPE_INFO = {
-  income:   { word: 'Доход',    sign: '+', cls: 'sum-earn',  act: 'act-earn',  withCategory: true  },
-  expense:  { word: 'Расход',   sign: '−', cls: 'sum-ink',   act: 'act-spend', withCategory: true  },
-  save:     { word: 'В банк',   sign: '−', cls: 'sum-vault', act: 'act-vault', withCategory: false },
-  withdraw: { word: 'Из банка', sign: '+', cls: 'sum-vault', act: 'act-vault', withCategory: false }
+  income: {
+    word: 'Доход', sign: '+', cls: 'sum-earn', act: 'act-earn', withCategory: true,
+    mainColor: '--engrave', mainTextColor: '--paper'
+  },
+  expense: {
+    word: 'Расход', sign: '−', cls: 'sum-ink', act: 'act-spend', withCategory: true,
+    mainColor: '--ink', mainTextColor: '--paper'
+  },
+  save: {
+    word: 'В банк', sign: '−', cls: 'sum-vault', act: 'act-vault', withCategory: false,
+    mainColor: '--fiber', mainTextColor: '--paper'
+  },
+  withdraw: {
+    word: 'Из банка', sign: '+', cls: 'sum-vault', act: 'act-vault', withCategory: false,
+    mainColor: '--fiber', mainTextColor: '--paper'
+  }
 };
 
 function addTransaction(type) {
@@ -953,14 +1013,14 @@ function showView(name) {
 function openCategories() {
   renderCatList();
   elCatModal.hidden = false;
-  syncBackButton();
+  syncTelegramChrome();
   buzz();
 }
 
 function closeCategories() {
   elCatModal.hidden = true;
   elNewCat.value = '';
-  syncBackButton();
+  syncTelegramChrome();
 }
 
 function renderCatList() {
@@ -1039,6 +1099,11 @@ if (inTelegram && tg.BackButton) {
     if (!elCatModal.hidden)        closeCategories();
     else if (!elEntryModal.hidden) closeEntry();
   });
+}
+
+// Главная кнопка Telegram записывает операцию — она всегда поверх клавиатуры
+if (hasMainButton) {
+  tg.MainButton.onClick(function () { addTransaction(entryType); });
 }
 
 $('btnWithdraw').onclick   = function () { openEntry('withdraw'); };

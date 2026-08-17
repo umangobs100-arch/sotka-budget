@@ -372,6 +372,9 @@ body {
 .act-auto { padding-left: 18px; padding-right: 18px; }
 /* Подтверждение в окне записи — во всю ширину */
 .act-wide { display: block; width: 100%; margin-top: 4px; }
+/* Внутри Telegram эту кнопку заменяет его собственная. Без этой строки
+   display:block выше пересилил бы атрибут hidden */
+.act[hidden] { display: none; }
 
 .act-spend { background: var(--ink); color: var(--paper); }
 .act-earn  { border-color: var(--engrave); color: var(--engrave); }
