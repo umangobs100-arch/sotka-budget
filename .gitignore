@@ -1,0 +1,5 @@
+# Мусор macOS
+.DS_Store
+
+# Локальные настройки Claude Code — они только для этого компьютера
+.claude/settings.local.json

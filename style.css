@@ -1,0 +1,706 @@
+/* ============================================================
+   ВНЕШНИЙ ВИД «СОТКИ»
+
+   Замысел — защитная печать банкноты. «Сотка» и есть сотенная
+   купюра, поэтому экран говорит её языком: гильошир вокруг
+   главной суммы, микротекст по краям, гравюрная штриховка
+   вместо сплошных полос, номер операции как серия на купюре.
+
+   Светлая тема — банкнотная бумага.
+   Тёмная — та же купюра под ультрафиолетовой лампой.
+
+   Всё, что можно поменять глазами, собрано в блоке ниже.
+   ============================================================ */
+
+:root {
+  /* Цвета. Названия говорят, за что каждый отвечает */
+  --paper:    #e7e6d7;   /* фон — банкнотная бумага, тёплая с зелёным подтоном */
+  --surface:  #f2f1e6;   /* окна поверх фона */
+  --ink:      #16211c;   /* основной текст и расходы — глубокая печатная зелень */
+  --graphite: #5e6b62;   /* подписи, второстепенное */
+  --rule:     #c7c9b6;   /* линейки, микротекст, пустые дорожки */
+  --engrave:  #2c6b4e;   /* гравюрная зелень: доходы и гильошир */
+  --fiber:    #4b4e93;   /* защитные волокна: банк */
+  --seal:     #9e3b2b;   /* сургучный красный: минус на балансе и удаление */
+
+  /* Шрифты */
+  --display: "Prata", Georgia, "Times New Roman", serif;
+  --ui: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius: 3px;
+  --guilloche-opacity: 0.42;
+  --guilloche-glow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:    #0f1613;
+    --surface:  #18211c;
+    --ink:      #e5e8da;
+    --graphite: #8a9990;
+    --rule:     #27342c;
+    --engrave:  #5fd3a0;
+    --fiber:    #8a8df0;
+    --seal:     #e8735c;
+    --guilloche-opacity: 0.5;
+    --guilloche-glow: drop-shadow(0 0 7px rgba(95, 211, 160, 0.3));
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+button { -webkit-user-select: none; user-select: none; }
+
+:focus-visible {
+  outline: 2px solid var(--fiber);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Гильошир уходит за правый край экрана.
+   Прячем горизонтальную прокрутку и на html, и на body — иначе
+   страницу можно утащить вбок пальцем */
+html { overflow-x: hidden; }
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 20px calc(32px + env(safe-area-inset-bottom));
+}
+
+/* ---------- Общие текстовые роли ---------- */
+
+/* Подпись над значением: «На руках», «Доходы» */
+.field-label {
+  margin: 0;
+  color: var(--graphite);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+/* Заголовок раздела: «Записать», «История».
+   Линейка справа — рамка банкнотного поля, а не украшение */
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  color: var(--graphite);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+.section-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+/* ---------- Микротекст по краям ---------- */
+
+.microtext {
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 7px 0;
+  color: var(--rule);
+  font-family: var(--mono);
+  font-size: 5px;
+  letter-spacing: 0.34em;
+  line-height: 1;
+  user-select: none;
+}
+
+/* ---------- Разделы ---------- */
+
+.block {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.block-last { border-bottom: none; padding-bottom: 12px; }
+
+/* ---------- Верхняя строка ---------- */
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 18px 0 2px;
+}
+
+.wordmark {
+  font-family: var(--display);
+  font-size: 17px;
+  letter-spacing: 0.06em;
+}
+
+/* Номер операции — как серия на купюре. Показывает, сколько всего записей */
+.serial {
+  color: var(--graphite);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.link-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  color: var(--fiber);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.link-btn:active { opacity: 0.55; }
+
+/* ---------- Вкладки ---------- */
+
+.tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tab {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 8px 0 11px;
+  color: var(--graphite);
+  font-family: var(--display);
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.tab.is-active { color: var(--ink); }
+/* Подчёркивание перекрывает линейку вкладок — активный лист «поднят» */
+.tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ink);
+}
+
+/* ---------- Баланс ---------- */
+
+.block-balance { position: relative; }
+.block-balance > *:not(.guilloche) { position: relative; z-index: 1; }
+
+/* Гильошир: розетка из вложенных волн, её форма зависит от суммы.
+   Деньги меняются — рисунок меняется вместе с ними */
+/* Привязан к главной сумме, а не к середине блока: иначе от каждой
+   новой строки внизу узор уползал бы вниз, под кнопки */
+.guilloche {
+  position: absolute;
+  top: -34px;
+  right: -66px;
+  width: 214px;
+  height: 214px;
+  pointer-events: none;
+  color: var(--engrave);
+  opacity: var(--guilloche-opacity);
+  /* Растворяем края: это водяной знак, а не рисунок поверх экрана */
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 80%);
+  mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 80%);
+  filter: var(--guilloche-glow);
+}
+.guilloche svg {
+  width: 100%;
+  height: 100%;
+  transition: transform 1.3s cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+/* Главная цифра. Prata — гравюрная антиква с высоким контрастом,
+   такими же режут номиналы на купюрах */
+.figure {
+  margin: 6px 0 0;
+  font-family: var(--display);
+  font-size: clamp(42px, 13.5vw, 54px);
+  line-height: 1.02;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.figure.is-negative { color: var(--seal); }
+
+.vault-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+.vault-sum {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.quiet-btn {
+  margin-left: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);   /* непрозрачный: кнопка не должна тонуть в гильошире */
+  color: var(--ink);
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.quiet-btn:active { background: var(--rule); }
+
+/* ---------- Ввод операции ---------- */
+
+.amount-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 0 14px;
+}
+/* Ширина поля подстраивается под длину числа (см. app.js),
+   чтобы сумма и знак ₽ всегда стояли рядом */
+.amount-input {
+  width: auto;
+  max-width: 62vw;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 44px;
+  text-align: right;
+  padding: 0;
+  outline: none;
+}
+.amount-input::placeholder { color: var(--rule); }
+.amount-cur {
+  font-family: var(--display);
+  font-size: 30px;
+  color: var(--graphite);
+}
+
+/* Поле-строка, а не поле-коробка: ближе к записи от руки */
+.note-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  padding: 9px 2px;
+  outline: none;
+}
+.note-input::placeholder { color: var(--graphite); }
+.note-input:focus { border-bottom-color: var(--ink); }
+
+.chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 18px 0 18px;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+/* Для перевода в банк категории не нужны — прячем совсем.
+   Без этой строки display:flex выше пересилил бы атрибут hidden */
+.chips[hidden] { display: none; }
+
+.chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--graphite);
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chip.is-active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* Три действия. «Расход» нажимают чаще всего — он и заполнен.
+   Двойная рамка внутри — банкнотное поле номинала */
+.actions {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 1fr;
+  gap: 7px;
+  margin-top: 24px;
+}
+.act {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  padding: 14px 4px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.act::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  opacity: 0.22;
+  pointer-events: none;
+}
+.act:active { opacity: 0.7; }
+.act-auto { padding-left: 18px; padding-right: 18px; }
+/* Подтверждение в окне записи — во всю ширину */
+.act-wide { display: block; width: 100%; margin-top: 4px; }
+
+.act-spend { background: var(--ink); color: var(--paper); }
+.act-earn  { border-color: var(--engrave); color: var(--engrave); }
+.act-vault { border-color: var(--fiber);   color: var(--fiber);   }
+.act-ghost { border-color: var(--rule);    color: var(--ink);     }
+.act-danger { background: var(--seal); color: #fff; }
+
+/* ---------- Итоги месяца ---------- */
+
+.month {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0;
+}
+.month-cell {
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--rule);
+}
+.month-cell:first-child { padding-left: 0; border-left: none; }
+.month-sum {
+  margin: 4px 0 0;
+  font-family: var(--display);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+.sum-earn  { color: var(--engrave); }
+.sum-vault { color: var(--fiber);   }
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 26px;
+}
+.bar-row { display: flex; flex-direction: column; gap: 6px; }
+.bar-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.bar-sum {
+  color: var(--graphite);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.bar-track {
+  height: 9px;
+  border: 1px solid var(--rule);
+  border-radius: 1px;
+  overflow: hidden;
+}
+/* Заливка штриховкой — так на гравюре показывают плотность */
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--ink) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+/* ---------- История ---------- */
+
+.day {
+  margin: 22px 0 4px;
+  color: var(--graphite);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+.day:first-child { margin-top: 0; }
+
+.op {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 13px 0;
+  cursor: pointer;
+}
+.op:active { opacity: 0.55; }
+
+.op-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.op-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-sub {
+  margin-top: 2px;
+  color: var(--graphite);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.op-sum {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sum-ink   { color: var(--ink); }
+.sum-muted { color: var(--graphite); }
+
+/* ---------- Отчёт ---------- */
+
+.report-meta {
+  margin: 20px 0 0;
+  color: var(--graphite);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* Где лежат записи. Точка слева — цвет состояния, без слов понятно */
+.storage-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-weight: 600;
+}
+.storage-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--graphite);
+}
+.storage-dot.is-live { background: var(--engrave); }
+.storage-dot.is-work { background: var(--fiber);   }
+.storage-dot.is-fail { background: var(--seal);    }
+
+.storage-note {
+  margin: 7px 0 0;
+  color: var(--graphite);
+  font-size: 13px;
+}
+
+/* Месяц и день устроены одинаково: шапка, под ней раскрывающееся тело */
+.period {
+  border-bottom: 1px solid var(--rule);
+  padding: 14px 0;
+}
+.period:last-child { border-bottom: none; padding-bottom: 0; }
+
+.period-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.period-head:active { opacity: 0.55; }
+
+.period-mark {
+  flex: 0 0 auto;
+  width: 9px;
+  color: var(--graphite);
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+.is-open > .period-head .period-mark { transform: rotate(90deg); }
+
+.period-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.period-title { font-weight: 600; }
+/* Переносится на вторую строку: цифры месяца важнее экономии места */
+.period-sub {
+  margin-top: 3px;
+  color: var(--graphite);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.period-net {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.period-bar { margin-top: 10px; }
+
+/* Вложенность показываем линейкой слева, а не отступом в пустоту */
+.period-body {
+  margin-top: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--rule);
+}
+
+.period-day { padding: 12px 0; }
+.period-day .period-title { font-weight: 400; }
+
+.empty {
+  color: var(--graphite);
+  font-size: 14px;
+  padding: 4px 0 8px;
+}
+
+/* ---------- Окна ---------- */
+
+/* Низ окна поднят на высоту клавиатуры (её меряет app.js), чтобы
+   кнопка «Записать» не пряталась под ней */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: var(--keyboard, 0px);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+}
+.modal[hidden] { display: none; }
+.modal-center { align-items: center; }
+/* Окно категорий открывается поверх окна записи */
+#catModal { z-index: 55; }
+#confirmModal { z-index: 58; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(8, 14, 11, 0.55); }
+
+.sheet {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--surface);
+  border-top: 1px solid var(--rule);
+  border-radius: 10px 10px 0 0;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+  max-height: 100%;
+  overflow-y: auto;
+}
+.sheet-confirm {
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  margin: auto 16px;
+  max-width: 400px;
+}
+
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.sheet-title { margin: 0; font-family: var(--display); font-size: 19px; font-weight: 400; }
+.hint { margin: 8px 0 18px; color: var(--graphite); font-size: 13px; }
+
+.cat-list { display: flex; flex-direction: column; margin-bottom: 18px; }
+.cat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--rule);
+  padding: 12px 0;
+}
+.cat-del {
+  border: none;
+  background: none;
+  color: var(--seal);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cat-add { display: flex; align-items: center; gap: 10px; }
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* ---------- Всплывающее сообщение ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(26px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 14px);
+  max-width: 88vw;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  padding: 11px 16px;
+  font-size: 13px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 60;
+}
+.toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Подсказка «введи сумму» ---------- */
+
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  30%      { transform: translateX(-6px); }
+  70%      { transform: translateX(6px); }
+}
+.is-nudged { animation: nudge 0.22s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .is-nudged { animation: none; }
+  .toast { transition: opacity 0.2s ease; }
+  .guilloche svg { transition: none; }
+  .period-mark { transition: none; }
+}
