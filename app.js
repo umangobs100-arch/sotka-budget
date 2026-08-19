@@ -340,6 +340,21 @@ function totals() {
   return { balance: balance, savings: savings };
 }
 
+/* Сколько лежало бы в банке, если бы этой операции не было.
+   Нужно при правке снятия: старую сумму надо мысленно вернуть,
+   иначе приложение решит, что в банке меньше, чем на самом деле.
+   Для новой операции передаётся null — тогда это обычный остаток. */
+function savingsWithout(id) {
+  let savings = 0;
+
+  for (const t of state.transactions) {
+    if (t.id === id) continue;
+    if      (t.type === 'save')     savings += t.amount;
+    else if (t.type === 'withdraw') savings -= t.amount;
+  }
+  return savings;
+}
+
 // Сводка за текущий месяц — нужна и решётке, и итогам
 function monthSummary() {
   let income = 0, spent = 0, saved = 0;
@@ -425,6 +440,7 @@ const elToast        = $('toast');
 const elEntryModal   = $('entryModal');
 const elEntryTitle   = $('entryTitle');
 const elEntrySubmit  = $('entrySubmit');
+const elEntryDelete  = $('entryDelete');
 
 
 // --- 5б. Окно записи операции ---
@@ -433,22 +449,60 @@ const elEntrySubmit  = $('entrySubmit');
    сколько денег, а кнопки «Расход», «Доход», «Банк» и «Снять» открывают окно —
    каждая своё, со своим заголовком и цветом подтверждения. */
 
-let entryType = 'expense';   // какую операцию сейчас записываем
+/* Окно работает в двух режимах. «Новая» — открыто кнопкой на главном экране.
+   «Правка» — открыто нажатием на операцию в истории или отчёте: поля уже
+   заполнены, подтверждение называется «Сохранить», и снизу появляется
+   «Удалить операцию». Тип операции при правке не меняется — он в заголовке. */
+
+let entryType = 'expense';    // какую операцию записываем или правим
+let entryMode = 'new';        // 'new' или 'edit'
+let editingId = null;         // какую именно операцию правим
+let categoryBeforeEdit = '';  // чтобы правка не сбила категорию для новых записей
 
 function openEntry(type) {
+  entryMode = 'new';
+  editingId = null;
   entryType = type;
-  const info = TYPE_INFO[type];
+
+  elAmount.value = '';
+  elNote.value = '';
+
+  showEntry();
+}
+
+function openEdit(id) {
+  const t = state.transactions.find(function (x) { return x.id === id; });
+  if (!t) return;
+
+  entryMode = 'edit';
+  editingId = id;
+  entryType = t.type;
+
+  categoryBeforeEdit = selectedCategory;
+  selectedCategory = t.category || '';
+
+  elAmount.value = String(t.amount).replace('.', ',');
+  elNote.value = t.note || '';
+
+  showEntry();
+}
+
+function showEntry() {
+  const info = TYPE_INFO[entryType];
+  const editing = entryMode === 'edit';
 
   elEntryTitle.textContent = info.word;
+  elEntrySubmit.textContent = editing ? 'Сохранить' : 'Записать';
   elEntrySubmit.className = 'act act-wide ' + info.act;
-  elChips.hidden = !info.withCategory;
 
   // Внутри Telegram подтверждает его собственная кнопка — своя не нужна
   elEntrySubmit.hidden = hasMainButton;
 
-  elAmount.value = '';
-  elNote.value = '';
+  elEntryDelete.hidden = !editing;
+  elChips.hidden = !info.withCategory;
+
   fitAmount();
+  renderChips();   // при правке нужно отметить категорию самой операции
 
   elEntryModal.hidden = false;
   syncTelegramChrome();
@@ -461,7 +515,48 @@ function openEntry(type) {
 function closeEntry() {
   elEntryModal.hidden = true;
   elAmount.blur();
+
+  // Возвращаем категорию, которая была выбрана для новых записей
+  if (entryMode === 'edit') {
+    selectedCategory = categoryBeforeEdit;
+    renderChips();
+  }
+
+  entryMode = 'new';
+  editingId = null;
   syncTelegramChrome();
+}
+
+// Одно подтверждение на оба режима
+function submitEntry() {
+  if (entryMode === 'edit') saveEdit();
+  else addTransaction(entryType);
+}
+
+function saveEdit() {
+  const t = state.transactions.find(function (x) { return x.id === editingId; });
+  if (!t) { closeEntry(); return; }
+
+  const amount = parseAmount(elAmount.value);
+  if (!amount) { nudgeAmount(); return; }
+
+  // Снять из банка больше, чем в нём лежит, нельзя и при правке
+  if (t.type === 'withdraw') {
+    const available = savingsWithout(t.id);
+    if (amount > available) {
+      toast('В банке только ' + money(available));
+      return;
+    }
+  }
+
+  t.amount   = amount;
+  t.note     = elNote.value.trim();
+  t.category = TYPE_INFO[t.type].withCategory ? selectedCategory : '';
+
+  save();
+  buzz('medium');
+  closeEntry();
+  render();
 }
 
 /* Клавиатура закрывает низ экрана. Поджимаем окна ровно на её высоту.
@@ -503,8 +598,9 @@ function cssColor(name) {
 function syncTelegramChrome() {
   if (!inTelegram) return;
 
-  const entryOpen = !elEntryModal.hidden;
-  const catOpen   = !elCatModal.hidden;
+  const entryOpen   = !elEntryModal.hidden;
+  const catOpen     = !elCatModal.hidden;
+  const confirmOpen = !elConfirmModal.hidden;
 
   if (tg.BackButton) {
     if (entryOpen || catOpen) tg.BackButton.show();
@@ -513,11 +609,11 @@ function syncTelegramChrome() {
 
   if (!tg.MainButton) return;
 
-  // Пока сверху окно категорий, записывать нечего — убираем кнопку
-  if (entryOpen && !catOpen) {
+  // Пока сверху окно категорий или вопрос об удалении — записывать нечего
+  if (entryOpen && !catOpen && !confirmOpen) {
     const info = TYPE_INFO[entryType];
     tg.MainButton.setParams({
-      text: 'Записать',
+      text: entryMode === 'edit' ? 'Сохранить' : 'Записать',
       color: cssColor(info.mainColor),
       text_color: cssColor(info.mainTextColor)
     });
@@ -540,11 +636,13 @@ function ask(text, onYes) {
   elConfirmText.textContent = text;
   elConfirmModal.hidden = false;
   pendingYes = onYes;
+  syncTelegramChrome();
 }
 
 function closeAsk() {
   elConfirmModal.hidden = true;
   pendingYes = null;
+  syncTelegramChrome();
 }
 
 let toastTimer = null;
@@ -582,22 +680,26 @@ const TYPE_INFO = {
   }
 };
 
+// Сумма не введена — подталкиваем поле и ставим в него курсор
+function nudgeAmount() {
+  elAmount.classList.remove('is-nudged');
+  void elAmount.offsetWidth;          // хитрость, чтобы анимация запустилась заново
+  elAmount.classList.add('is-nudged');
+  elAmount.focus();
+}
+
 function addTransaction(type) {
   const amount = parseAmount(elAmount.value);
 
-  if (!amount) {
-    // сумма не введена — подталкиваем поле и ставим в него курсор
-    elAmount.classList.remove('is-nudged');
-    void elAmount.offsetWidth;          // хитрость, чтобы анимация запустилась заново
-    elAmount.classList.add('is-nudged');
-    elAmount.focus();
-    return;
-  }
+  if (!amount) { nudgeAmount(); return; }
 
   // Нельзя снять из банка больше, чем в нём лежит
-  if (type === 'withdraw' && amount > totals().savings) {
-    toast('В банке только ' + money(totals().savings));
-    return;
+  if (type === 'withdraw') {
+    const available = savingsWithout(null);
+    if (amount > available) {
+      toast('В банке только ' + money(available));
+      return;
+    }
   }
 
   state.transactions.push({
@@ -621,7 +723,8 @@ function addTransaction(type) {
   render();
 }
 
-function deleteTransaction(id) {
+// after — что сделать после удаления. Из окна правки это «закрыть окно»
+function deleteTransaction(id, after) {
   const t = state.transactions.find(function (x) { return x.id === id; });
   if (!t) return;
 
@@ -629,6 +732,7 @@ function deleteTransaction(id) {
     state.transactions = state.transactions.filter(function (x) { return x.id !== id; });
     save();
     buzz('rigid');
+    if (after) after();
     render();
   });
 }
@@ -807,7 +911,8 @@ function opElement(t) {
   sum.textContent = info.sign + ' ' + money(t.amount);
   sum.classList.add(info.cls);
 
-  op.onclick = function () { deleteTransaction(t.id); };
+  // Нажатие открывает правку. Удаление — уже оттуда
+  op.onclick = function () { openEdit(t.id); };
   return op;
 }
 
@@ -1069,7 +1174,11 @@ document.querySelectorAll('.actions .act').forEach(function (btn) {
   btn.onclick = function () { openEntry(btn.dataset.type); };
 });
 
-$('entrySubmit').onclick = function () { addTransaction(entryType); };
+elEntrySubmit.onclick = submitEntry;
+
+elEntryDelete.onclick = function () {
+  deleteTransaction(editingId, closeEntry);
+};
 
 elEntryModal.querySelectorAll('[data-entry-close]').forEach(function (el) {
   el.onclick = closeEntry;
@@ -1078,7 +1187,7 @@ elEntryModal.querySelectorAll('[data-entry-close]').forEach(function (el) {
 // На компьютере привычно: Enter записывает, Escape закрывает
 [elAmount, elNote].forEach(function (field) {
   field.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') addTransaction(entryType);
+    if (e.key === 'Enter') submitEntry();
   });
 });
 
@@ -1101,9 +1210,9 @@ if (inTelegram && tg.BackButton) {
   });
 }
 
-// Главная кнопка Telegram записывает операцию — она всегда поверх клавиатуры
+// Главная кнопка Telegram подтверждает — она всегда поверх клавиатуры
 if (hasMainButton) {
-  tg.MainButton.onClick(function () { addTransaction(entryType); });
+  tg.MainButton.onClick(submitEntry);
 }
 
 $('btnWithdraw').onclick   = function () { openEntry('withdraw'); };

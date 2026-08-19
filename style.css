@@ -382,6 +382,21 @@ body {
 .act-ghost { border-color: var(--rule);    color: var(--ink);     }
 .act-danger { background: var(--seal); color: #fff; }
 
+/* Удаление в окне правки: доступно, но не спорит с «Сохранить» */
+.entry-delete {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--seal);
+  font: inherit;
+  font-size: 14px;
+  padding: 15px 0 2px;
+  cursor: pointer;
+}
+.entry-delete[hidden] { display: none; }
+.entry-delete:active { opacity: 0.55; }
+
 /* ---------- Итоги месяца ---------- */
 
 .month {
