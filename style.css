@@ -141,6 +141,12 @@ body {
   padding: 18px 0 2px;
 }
 
+/* Запущено с экрана «Домой» — сверху нет ни браузера, ни шапки Telegram,
+   поэтому отступаем от чёлки сами */
+@media (display-mode: standalone) {
+  .topbar { padding-top: calc(18px + env(safe-area-inset-top)); }
+}
+
 .wordmark {
   font-family: var(--display);
   font-size: 17px;

@@ -3,17 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#e7e6d7">
+  <meta name="theme-color" content="#e7e6d7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1613" media="(prefers-color-scheme: dark)">
   <title>xxx77 — бюджет</title>
+
+  <!-- Иконка для экрана «Домой» и вкладки браузера -->
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="xxx77">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <!-- Шрифты: Prata — цифры денег, Golos Text — интерфейс, JetBrains Mono — служебные строки -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Prata&display=swap">
 
-  <!-- ?v=20 — метка версии: Telegram и браузер кэшируют файлы намертво,
+  <!-- ?v=21 — метка версии: Telegram и браузер кэшируют файлы намертво,
        поменяй число, если правки не видны на телефоне -->
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=21">
   <!-- Скрипт Telegram: даёт приложению доступ к теме, вибрации и кнопкам Telegram.
        В обычном браузере он просто ничего не делает — приложение всё равно работает. -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -201,6 +210,6 @@
   </div>
 </div>
 
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
