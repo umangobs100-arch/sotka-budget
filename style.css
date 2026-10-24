@@ -31,6 +31,10 @@
   --radius: 3px;
   --guilloche-opacity: 0.42;
   --guilloche-glow: none;
+
+  /* Системные элементы — выбор даты, курсор, полосы прокрутки —
+     рисует сам браузер. Так он узнаёт, какая у нас тема */
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -45,6 +49,7 @@
     --seal:     #e8735c;
     --guilloche-opacity: 0.5;
     --guilloche-glow: drop-shadow(0 0 7px rgba(95, 211, 160, 0.3));
+    color-scheme: dark;
   }
 }
 
@@ -177,7 +182,7 @@ body {
 
 .tabs {
   display: flex;
-  gap: 24px;
+  gap: 22px;
   border-bottom: 1px solid var(--rule);
 }
 
@@ -515,6 +520,34 @@ body {
 }
 .sum-ink   { color: var(--ink); }
 .sum-muted { color: var(--graphite); }
+/* Тревога: свободных денег меньше нуля или срок уже прошёл */
+.sum-alert { color: var(--seal); }
+
+/* ---------- План ---------- */
+
+/* Строка «Когда» в окне плана: подпись слева, дата справа */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--rule);
+  padding: 12px 2px;
+}
+
+.date-input {
+  margin-left: auto;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  padding: 0;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#btnAddPlan { margin-top: 22px; }
 
 /* ---------- Отчёт ---------- */
 

@@ -20,9 +20,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Prata&display=swap">
 
-  <!-- ?v=21 — метка версии: Telegram и браузер кэшируют файлы намертво,
+  <!-- ?v=23 — метка версии: Telegram и браузер кэшируют файлы намертво,
        поменяй число, если правки не видны на телефоне -->
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=23">
   <!-- Скрипт Telegram: даёт приложению доступ к теме, вибрации и кнопкам Telegram.
        В обычном браузере он просто ничего не делает — приложение всё равно работает. -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -44,6 +44,7 @@
   <!-- ПЕРЕКЛЮЧАТЕЛЬ ЭКРАНОВ -->
   <nav class="tabs" role="tablist">
     <button class="tab is-active" role="tab" aria-selected="true"  aria-controls="viewMain"   data-view="main">Счёт</button>
+    <button class="tab"           role="tab" aria-selected="false" aria-controls="viewPlan"   data-view="plan">План</button>
     <button class="tab"           role="tab" aria-selected="false" aria-controls="viewReport" data-view="report">Отчёт</button>
   </nav>
 
@@ -102,6 +103,43 @@
 
 </div>
 <!-- ================= КОНЕЦ ЭКРАНА «СЧЁТ» ================= -->
+
+
+<!-- ================= ЭКРАН «ПЛАН» ================= -->
+<div id="viewPlan" role="tabpanel" hidden>
+
+  <!-- СКОЛЬКО УЖЕ РАСПИСАНО, А СКОЛЬКО СВОБОДНО -->
+  <section class="block">
+    <p class="section-label">Распределение</p>
+
+    <dl class="month">
+      <div class="month-cell">
+        <dt class="field-label">На руках</dt>
+        <dd class="month-sum" id="planBalance">0 ₽</dd>
+      </div>
+      <div class="month-cell">
+        <dt class="field-label">В планах</dt>
+        <dd class="month-sum sum-vault" id="plannedTotal">0 ₽</dd>
+      </div>
+      <div class="month-cell">
+        <dt class="field-label">Свободно</dt>
+        <dd class="month-sum sum-earn" id="freeTotal">0 ₽</dd>
+      </div>
+    </dl>
+
+    <p class="report-meta" id="planMeta"></p>
+
+    <button class="act act-wide act-ghost" id="btnAddPlan">Запланировать трату</button>
+  </section>
+
+  <!-- БУДУЩИЕ ТРАТЫ ПО СРОКАМ -->
+  <section class="block block-last">
+    <p class="section-label">Впереди</p>
+    <div id="planList"></div>
+  </section>
+
+</div>
+<!-- ================= КОНЕЦ ЭКРАНА «ПЛАН» ================= -->
 
 
 <!-- ================= ЭКРАН «ОТЧЁТ» ================= -->
@@ -181,6 +219,36 @@
   </div>
 </div>
 
+<!-- ОКНО ЗАПИСИ В ПЛАН -->
+<div class="modal" id="planModal" hidden>
+  <div class="modal-backdrop" data-plan-close></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 class="sheet-title" id="planSheetTitle">Запланировать</h2>
+      <button class="link-btn" data-plan-close>Отмена</button>
+    </div>
+
+    <div class="amount-row">
+      <input id="planAmount" class="amount-input" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Сумма">
+      <span class="amount-cur" aria-hidden="true">₽</span>
+    </div>
+
+    <input id="planNote" class="note-input" placeholder="На что" autocomplete="off" maxlength="60" aria-label="На что">
+
+    <label class="field-row">
+      <span class="field-label">Когда</span>
+      <input type="date" id="planDate" class="date-input" aria-label="Дата">
+    </label>
+
+    <!-- Сюда app.js сам вставит кнопки категорий -->
+    <div class="chips" id="planChips"></div>
+
+    <button class="act act-wide act-spend" id="planPrimary">Добавить</button>
+    <button class="act act-wide act-ghost" id="planSave" hidden>Сохранить изменения</button>
+    <button class="entry-delete" id="planDelete" hidden>Удалить из плана</button>
+  </div>
+</div>
+
 <!-- ОКНО УПРАВЛЕНИЯ КАТЕГОРИЯМИ -->
 <div class="modal" id="catModal" hidden>
   <div class="modal-backdrop" data-close></div>
@@ -210,6 +278,6 @@
   </div>
 </div>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

@@ -34,6 +34,7 @@ const DEFAULT_CATEGORIES = ['Еда', 'Транспорт', 'Жильё', 'Ра�
 // state — это всё, что приложение про тебя знает
 let state = {
   transactions: [],                        // список операций
+  plans: [],                               // будущие траты, которых ещё не было
   categories: DEFAULT_CATEGORIES.slice(),  // список категорий
   updatedAt: 0                             // когда в последний раз что-то менялось
 };
@@ -44,6 +45,7 @@ let selectedCategory = '';   // пустая строка = «Без катег�
 function serialize() {
   return JSON.stringify({
     transactions: state.transactions,
+    plans: state.plans,
     categories: state.categories,
     updatedAt: state.updatedAt
   });
@@ -52,6 +54,8 @@ function serialize() {
 function applyData(data) {
   if (Array.isArray(data.transactions)) state.transactions = data.transactions;
   if (Array.isArray(data.categories))   state.categories   = data.categories;
+  // plans появились позже — у старых сохранений их просто нет
+  state.plans = Array.isArray(data.plans) ? data.plans : [];
   state.updatedAt = Number(data.updatedAt) || 0;
 }
 
@@ -63,7 +67,9 @@ function load() {
 
     // Записи, сделанные до появления облака, отметки времени не имеют.
     // Без неё облако не поймёт, что эти данные новее пустоты, — ставим сейчас.
-    if (!state.updatedAt && state.transactions.length) state.updatedAt = Date.now();
+    if (!state.updatedAt && (state.transactions.length || state.plans.length)) {
+      state.updatedAt = Date.now();
+    }
   } catch (e) {
     console.error('Не удалось прочитать сохранённые данные:', e);
   }
@@ -215,7 +221,7 @@ async function cloudLoad() {
 
     // В облаке пусто — значит, это первый запуск. Отправляем то, что есть.
     if (!metaRaw) {
-      if (state.transactions.length) cloudSave(serialize());
+      if (state.transactions.length || state.plans.length) cloudSave(serialize());
       else setStorageStatus('saved');
       return;
     }
@@ -312,6 +318,53 @@ function monthKey(date) {
 
 function dayKey(date) {
   return monthKey(date) + '-' + String(date.getDate()).padStart(2, '0');
+}
+
+/* Срок в плане хранится строкой «2026-11-05» — ровно в том виде, в каком
+   его отдаёт поле выбора даты. Разбираем с «T00:00:00», иначе браузер
+   посчитает дату по Гринвичу и в нашем часовом поясе она съедет на день. */
+function planDate(str) {
+  return new Date(str + 'T00:00:00');
+}
+
+function todayValue() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+         String(d.getMonth() + 1).padStart(2, '0') + '-' +
+         String(d.getDate()).padStart(2, '0');
+}
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Куда запись попадёт в списке: срок прошёл, ближайший месяц или дальше
+function planGroup(str) {
+  const d = planDate(str);
+  const today = startOfToday();
+  if (d < today) return 'late';
+
+  const edge = new Date(today);
+  edge.setDate(edge.getDate() + 30);
+  return d <= edge ? 'soon' : 'later';
+}
+
+function planDateLabel(str) {
+  const d = planDate(str);
+  const today = startOfToday();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  if (sameDay(d, today))    return 'Сегодня';
+  if (sameDay(d, tomorrow)) return 'Завтра';
+
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric'
+  });
 }
 
 // «1 операция», «2 операции», «5 операций»
@@ -441,6 +494,21 @@ const elEntryModal   = $('entryModal');
 const elEntryTitle   = $('entryTitle');
 const elEntrySubmit  = $('entrySubmit');
 const elEntryDelete  = $('entryDelete');
+const elViewPlan     = $('viewPlan');
+const elPlanBalance  = $('planBalance');
+const elPlannedTotal = $('plannedTotal');
+const elFreeTotal    = $('freeTotal');
+const elPlanMeta     = $('planMeta');
+const elPlanList     = $('planList');
+const elPlanModal    = $('planModal');
+const elPlanSheetTitle = $('planSheetTitle');
+const elPlanAmount   = $('planAmount');
+const elPlanNote     = $('planNote');
+const elPlanDate     = $('planDate');
+const elPlanChips    = $('planChips');
+const elPlanPrimary  = $('planPrimary');
+const elPlanSave     = $('planSave');
+const elPlanDelete   = $('planDelete');
 
 
 // --- 5б. Окно записи операции ---
@@ -527,6 +595,163 @@ function closeEntry() {
   syncTelegramChrome();
 }
 
+/* --- Окно плана ---
+
+   Устроено как окно записи, но полей больше: к сумме, названию и категории
+   добавляется срок. Главное отличие — что происходит при подтверждении:
+   новая запись просто ложится в план, а у существующей «Потрачено»
+   превращает её в настоящий расход и убирает из плана. */
+
+let planMode = 'new';      // 'new' или 'edit'
+let planEditingId = null;
+let planCategory = '';     // своя выбранная категория, отдельно от окна записи
+
+function openPlanNew() {
+  planMode = 'new';
+  planEditingId = null;
+  planCategory = '';
+
+  elPlanAmount.value = '';
+  elPlanNote.value = '';
+  elPlanDate.value = todayValue();
+
+  showPlanSheet();
+}
+
+function openPlan(id) {
+  const p = state.plans.find(function (x) { return x.id === id; });
+  if (!p) return;
+
+  planMode = 'edit';
+  planEditingId = id;
+  planCategory = p.category || '';
+
+  elPlanAmount.value = String(p.amount).replace('.', ',');
+  elPlanNote.value = p.note || '';
+  elPlanDate.value = p.date;
+
+  showPlanSheet();
+}
+
+function showPlanSheet() {
+  const editing = planMode === 'edit';
+
+  elPlanSheetTitle.textContent = editing ? 'Запланировано' : 'Запланировать';
+  elPlanPrimary.textContent = editing ? 'Потрачено' : 'Добавить';
+  elPlanPrimary.hidden = hasMainButton;
+  elPlanSave.hidden = !editing;
+  elPlanDelete.hidden = !editing;
+
+  fitField(elPlanAmount);
+  renderChips();
+
+  elPlanModal.hidden = false;
+  syncTelegramChrome();
+  buzz();
+  elPlanAmount.focus();
+}
+
+function closePlanSheet() {
+  elPlanModal.hidden = true;
+  elPlanAmount.blur();
+  planMode = 'new';
+  planEditingId = null;
+  syncTelegramChrome();
+}
+
+// Читает поля окна. Вернёт null, если сумма не введена
+function readPlanFields() {
+  const amount = parseAmount(elPlanAmount.value);
+  if (!amount) { nudge(elPlanAmount); return null; }
+
+  return {
+    amount: amount,
+    note: elPlanNote.value.trim(),
+    category: planCategory,
+    date: elPlanDate.value || todayValue()
+  };
+}
+
+function planPrimaryAction() {
+  if (planMode === 'edit') spendPlan();
+  else addPlan();
+}
+
+function addPlan() {
+  const f = readPlanFields();
+  if (!f) return;
+
+  state.plans.push({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    amount: f.amount,
+    note: f.note,
+    category: f.category,
+    date: f.date
+  });
+
+  save();
+  buzz('medium');
+  closePlanSheet();
+  render();
+}
+
+function savePlan() {
+  const p = state.plans.find(function (x) { return x.id === planEditingId; });
+  if (!p) { closePlanSheet(); return; }
+
+  const f = readPlanFields();
+  if (!f) return;
+
+  p.amount   = f.amount;
+  p.note     = f.note;
+  p.category = f.category;
+  p.date     = f.date;
+
+  save();
+  buzz('medium');
+  closePlanSheet();
+  render();
+}
+
+/* Трата случилась. Берём то, что сейчас в полях — сумма могла отличаться
+   от задуманной — и записываем настоящий расход сегодняшним числом.
+   Из плана запись уходит: она больше не будущее. */
+function spendPlan() {
+  const f = readPlanFields();
+  if (!f) return;
+
+  state.transactions.push({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    type: 'expense',
+    amount: f.amount,
+    category: f.category,
+    note: f.note,
+    date: new Date().toISOString()
+  });
+
+  state.plans = state.plans.filter(function (x) { return x.id !== planEditingId; });
+
+  save();
+  buzz('medium');
+  closePlanSheet();
+  render();
+  toast('Записано в расходы: ' + money(f.amount));
+}
+
+function deletePlan() {
+  const p = state.plans.find(function (x) { return x.id === planEditingId; });
+  if (!p) return;
+
+  ask('Убрать из плана ' + money(p.amount) + '?', function () {
+    state.plans = state.plans.filter(function (x) { return x.id !== p.id; });
+    save();
+    buzz('rigid');
+    closePlanSheet();
+    render();
+  });
+}
+
+
 // Одно подтверждение на оба режима
 function submitEntry() {
   if (entryMode === 'edit') saveEdit();
@@ -599,23 +824,33 @@ function syncTelegramChrome() {
   if (!inTelegram) return;
 
   const entryOpen   = !elEntryModal.hidden;
+  const planOpen    = !elPlanModal.hidden;
   const catOpen     = !elCatModal.hidden;
   const confirmOpen = !elConfirmModal.hidden;
 
   if (tg.BackButton) {
-    if (entryOpen || catOpen) tg.BackButton.show();
+    if (entryOpen || planOpen || catOpen) tg.BackButton.show();
     else tg.BackButton.hide();
   }
 
   if (!tg.MainButton) return;
 
-  // Пока сверху окно категорий или вопрос об удалении — записывать нечего
-  if (entryOpen && !catOpen && !confirmOpen) {
+  // Пока сверху окно категорий или вопрос об удалении — подтверждать нечего
+  const busy = catOpen || confirmOpen;
+
+  if (entryOpen && !busy) {
     const info = TYPE_INFO[entryType];
     tg.MainButton.setParams({
       text: entryMode === 'edit' ? 'Сохранить' : 'Записать',
       color: cssColor(info.mainColor),
       text_color: cssColor(info.mainTextColor)
+    });
+    tg.MainButton.show();
+  } else if (planOpen && !busy) {
+    tg.MainButton.setParams({
+      text: planMode === 'edit' ? 'Потрачено' : 'Добавить',
+      color: cssColor('--ink'),
+      text_color: cssColor('--paper')
     });
     tg.MainButton.show();
   } else {
@@ -681,12 +916,14 @@ const TYPE_INFO = {
 };
 
 // Сумма не введена — подталкиваем поле и ставим в него курсор
-function nudgeAmount() {
-  elAmount.classList.remove('is-nudged');
-  void elAmount.offsetWidth;          // хитрость, чтобы анимация запустилась заново
-  elAmount.classList.add('is-nudged');
-  elAmount.focus();
+function nudge(field) {
+  field.classList.remove('is-nudged');
+  void field.offsetWidth;             // хитрость, чтобы анимация запустилась заново
+  field.classList.add('is-nudged');
+  field.focus();
 }
+
+function nudgeAmount() { nudge(elAmount); }
 
 function addTransaction(type) {
   const amount = parseAmount(elAmount.value);
@@ -804,22 +1041,23 @@ function rosette(radius, depth, petals, phase) {
   return d + 'Z';
 }
 
-function renderChips() {
-  elChips.innerHTML = '';
+// Один и тот же ряд категорий нужен и окну записи, и окну плана
+function renderChipsInto(box, current, onPick) {
+  box.innerHTML = '';
 
   // Первым всегда идёт вариант «Без категории» — он выбран по умолчанию
   const options = [''].concat(state.categories);
 
   options.forEach(function (cat) {
     const btn = document.createElement('button');
-    btn.className = 'chip' + (cat === selectedCategory ? ' is-active' : '');
+    btn.className = 'chip' + (cat === current ? ' is-active' : '');
     btn.textContent = cat === '' ? 'Без категории' : cat;
     btn.onclick = function () {
-      selectedCategory = cat;
+      onPick(cat);
       buzz();
       renderChips();
     };
-    elChips.appendChild(btn);
+    box.appendChild(btn);
   });
 
   // Последняя кнопка — открыть окно управления категориями
@@ -827,7 +1065,12 @@ function renderChips() {
   add.className = 'chip';
   add.textContent = '+ категория';
   add.onclick = openCategories;
-  elChips.appendChild(add);
+  box.appendChild(add);
+}
+
+function renderChips() {
+  renderChipsInto(elChips, selectedCategory, function (cat) { selectedCategory = cat; });
+  renderChipsInto(elPlanChips, planCategory, function (cat) { planCategory = cat; });
 }
 
 function renderMonth() {
@@ -1040,6 +1283,84 @@ function dayBlock(key, list) {
   return box;
 }
 
+// --- 8в. Экран «План»: будущие траты и свободные деньги ---
+
+function plannedTotal() {
+  return state.plans.reduce(function (sum, p) { return sum + p.amount; }, 0);
+}
+
+function renderPlan() {
+  const balance = totals().balance;
+  const planned = plannedTotal();
+  const free = balance - planned;
+
+  elPlanBalance.textContent   = money(balance);
+  elPlannedTotal.textContent  = money(planned);
+  elFreeTotal.textContent     = money(free);
+
+  // Расписал больше, чем есть — это уже тревога, а не просто цифра
+  elFreeTotal.classList.toggle('sum-earn', free >= 0);
+  elFreeTotal.classList.toggle('sum-alert', free < 0);
+
+  const late = state.plans.filter(function (p) { return planGroup(p.date) === 'late'; }).length;
+  const n = state.plans.length;
+
+  elPlanMeta.textContent = !n ? '' :
+    n + ' ' + plural(n, 'запись', 'записи', 'записей') +
+    (late ? ' · ' + late + ' ' + plural(late, 'просрочена', 'просрочены', 'просрочено') : '');
+
+  elPlanList.innerHTML = '';
+
+  if (!n) {
+    elPlanList.innerHTML =
+      '<p class="empty">Здесь появятся будущие траты. Нажми «Запланировать трату» и впиши, сколько и когда понадобится.</p>';
+    return;
+  }
+
+  // Ближний срок — выше
+  const sorted = state.plans.slice().sort(function (a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+
+  const groups = { late: [], soon: [], later: [] };
+  sorted.forEach(function (p) { groups[planGroup(p.date)].push(p); });
+
+  [['late', 'Просрочено'], ['soon', 'Скоро'], ['later', 'Потом']].forEach(function (g) {
+    const list = groups[g[0]];
+    if (!list.length) return;
+
+    const head = document.createElement('p');
+    head.className = 'day';
+    head.textContent = g[1];
+    elPlanList.appendChild(head);
+
+    list.forEach(function (p) {
+      elPlanList.appendChild(planElement(p, g[0] === 'late'));
+    });
+  });
+}
+
+// Строка плана устроена как строка истории — и ведёт себя так же
+function planElement(p, late) {
+  const row = document.createElement('button');
+  row.className = 'op';
+  row.innerHTML =
+    '<span class="op-main"><span class="op-title"></span><span class="op-sub"></span></span>' +
+    '<span class="op-sum"></span>';
+
+  row.querySelector('.op-title').textContent = p.category || p.note || 'Трата';
+  row.querySelector('.op-sub').textContent =
+    (p.category && p.note ? p.note + ' · ' : '') + planDateLabel(p.date);
+
+  const sum = row.querySelector('.op-sum');
+  sum.textContent = money(p.amount);
+  sum.classList.add(late ? 'sum-alert' : 'sum-ink');
+
+  row.onclick = function () { openPlan(p.id); };
+  return row;
+}
+
+
 // Строка «Хранение» на экране отчёта: честно говорит, где сейчас лежат записи
 const STORAGE_TEXT = {
   local: ['Только на этом устройстве', 'is-idle',
@@ -1094,13 +1415,17 @@ function render() {
   renderChips();
   renderMonth();
   renderHistory();
+  renderPlan();
   renderReport();
 }
 
-// Переключение между «Счётом» и «Отчётом»
+// Переключение между «Счётом», «Планом» и «Отчётом»
+const VIEWS = { main: elViewMain, plan: elViewPlan, report: elViewReport };
+
 function showView(name) {
-  elViewMain.hidden   = name !== 'main';
-  elViewReport.hidden = name !== 'report';
+  Object.keys(VIEWS).forEach(function (key) {
+    VIEWS[key].hidden = key !== name;
+  });
 
   elTabs.forEach(function (tab) {
     const active = tab.dataset.view === name;
@@ -1184,18 +1509,34 @@ elEntryModal.querySelectorAll('[data-entry-close]').forEach(function (el) {
   el.onclick = closeEntry;
 });
 
-// На компьютере привычно: Enter записывает, Escape закрывает
+$('btnAddPlan').onclick  = openPlanNew;
+elPlanPrimary.onclick    = planPrimaryAction;
+elPlanSave.onclick       = savePlan;
+elPlanDelete.onclick     = deletePlan;
+
+elPlanModal.querySelectorAll('[data-plan-close]').forEach(function (el) {
+  el.onclick = closePlanSheet;
+});
+
+// На компьютере привычно: Enter подтверждает, Escape закрывает
 [elAmount, elNote].forEach(function (field) {
   field.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') submitEntry();
   });
 });
 
+[elPlanAmount, elPlanNote, elPlanDate].forEach(function (field) {
+  field.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') planPrimaryAction();
+  });
+});
+
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
-  if (!elConfirmModal.hidden)   closeAsk();
-  else if (!elCatModal.hidden)  closeCategories();
-  else if (!elEntryModal.hidden) closeEntry();
+  if (!elConfirmModal.hidden)     closeAsk();
+  else if (!elCatModal.hidden)    closeCategories();
+  else if (!elEntryModal.hidden)  closeEntry();
+  else if (!elPlanModal.hidden)   closePlanSheet();
 });
 
 elTabs.forEach(function (tab) {
@@ -1207,12 +1548,16 @@ if (inTelegram && tg.BackButton) {
   tg.BackButton.onClick(function () {
     if (!elCatModal.hidden)        closeCategories();
     else if (!elEntryModal.hidden) closeEntry();
+    else if (!elPlanModal.hidden)  closePlanSheet();
   });
 }
 
-// Главная кнопка Telegram подтверждает — она всегда поверх клавиатуры
+// Главная кнопка Telegram подтверждает то окно, что сейчас открыто
 if (hasMainButton) {
-  tg.MainButton.onClick(submitEntry);
+  tg.MainButton.onClick(function () {
+    if (!elEntryModal.hidden)     submitEntry();
+    else if (!elPlanModal.hidden) planPrimaryAction();
+  });
 }
 
 $('btnWithdraw').onclick   = function () { openEntry('withdraw'); };
@@ -1232,13 +1577,18 @@ elConfirmModal.querySelectorAll('[data-cancel]').forEach(function (el) { el.oncl
 
 // Поле суммы: пускаем только цифры, запятую и точку,
 // и подгоняем ширину поля под длину числа
-function fitAmount() {
-  elAmount.size = Math.max(1, elAmount.value.length);
+function fitField(field) {
+  field.size = Math.max(1, field.value.length);
 }
 
-elAmount.addEventListener('input', function () {
-  elAmount.value = elAmount.value.replace(/[^\d.,]/g, '');
-  fitAmount();
+function fitAmount() { fitField(elAmount); }
+
+// Оба поля суммы ведут себя одинаково: только цифры, ширина по содержимому
+[elAmount, elPlanAmount].forEach(function (field) {
+  field.addEventListener('input', function () {
+    field.value = field.value.replace(/[^\d.,]/g, '');
+    fitField(field);
+  });
 });
 
 
