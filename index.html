@@ -20,9 +20,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Prata&display=swap">
 
-  <!-- ?v=23 — метка версии: Telegram и браузер кэшируют файлы намертво,
+  <!-- ?v=24 — метка версии: Telegram и браузер кэшируют файлы намертво,
        поменяй число, если правки не видны на телефоне -->
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=24">
   <!-- Скрипт Telegram: даёт приложению доступ к теме, вибрации и кнопкам Telegram.
        В обычном браузере он просто ничего не делает — приложение всё равно работает. -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -257,11 +257,20 @@
       <h2 class="sheet-title">Категории</h2>
       <button class="link-btn" data-close>Готово</button>
     </div>
-    <p class="hint">Категорию можно не выбирать — операция сохранится без неё.</p>
-    <div class="cat-list" id="catList"></div>
+    <p class="hint">Готовых категорий нет — заводи свои. Категорию можно и не выбирать, операция сохранится без неё.</p>
+
+    <p class="section-label">Расходы</p>
+    <div class="cat-list" id="catListExpense"></div>
     <div class="cat-add">
-      <input id="newCat" class="note-input" placeholder="Новая категория" maxlength="24" autocomplete="off" aria-label="Новая категория">
-      <button class="act act-spend act-auto" id="btnAddCat">Добавить</button>
+      <input id="newCatExpense" class="note-input" placeholder="На что тратишь" maxlength="24" autocomplete="off" aria-label="Новая категория расхода">
+      <button class="act act-spend act-auto" data-add="expense">Добавить</button>
+    </div>
+
+    <p class="section-label cat-section">Доходы</p>
+    <div class="cat-list" id="catListIncome"></div>
+    <div class="cat-add">
+      <input id="newCatIncome" class="note-input" placeholder="Откуда приходят" maxlength="24" autocomplete="off" aria-label="Новая категория дохода">
+      <button class="act act-earn act-auto" data-add="income">Добавить</button>
     </div>
   </div>
 </div>
@@ -278,6 +287,6 @@
   </div>
 </div>
 
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

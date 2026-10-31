@@ -29,17 +29,20 @@ function buzz(style) {
 
 const STORAGE_KEY = 'sotka-budget-v1';   // под этим именем данные лежат в памяти телефона
 
-const DEFAULT_CATEGORIES = ['Еда', 'Транспорт', 'Жильё', 'Развлечения', 'Здоровье', 'Подписки', 'Прочее'];
+/* Категорий две пачки: своя у расходов, своя у доходов — «Зарплате» нечего
+   делать в списке трат. Готовых нет вовсе: список заводит сам человек. */
+const CATEGORY_KINDS = ['expense', 'income'];
 
 // state — это всё, что приложение про тебя знает
 let state = {
   transactions: [],                        // список операций
   plans: [],                               // будущие траты, которых ещё не было
-  categories: DEFAULT_CATEGORIES.slice(),  // список категорий
+  categories: { expense: [], income: [] },  // свои списки у трат и у поступлений
   updatedAt: 0                             // когда в последний раз что-то менялось
 };
 
-let selectedCategory = '';   // пустая строка = «Без категории» (вариант по умолчанию)
+// Пустая строка = «Без категории». Выбор запоминается отдельно для трат и поступлений
+let selectedCategory = { expense: '', income: '' };
 
 // Всё, что мы храним, одной строкой — и в телефон, и в облако уходит именно она
 function serialize() {
@@ -53,10 +56,30 @@ function serialize() {
 
 function applyData(data) {
   if (Array.isArray(data.transactions)) state.transactions = data.transactions;
-  if (Array.isArray(data.categories))   state.categories   = data.categories;
   // plans появились позже — у старых сохранений их просто нет
   state.plans = Array.isArray(data.plans) ? data.plans : [];
+  state.categories = readCategories(data.categories);
   state.updatedAt = Number(data.updatedAt) || 0;
+}
+
+/* Раньше категории были одним списком на всё, и он приходил с готовым набором.
+   Теперь списка два и оба пустые. Старый список намеренно не переносим —
+   в уже записанных операциях названия остаются как есть, они хранятся в
+   самой операции и от списка не зависят. */
+function readCategories(raw) {
+  const out = { expense: [], income: [] };
+
+  if (raw && !Array.isArray(raw)) {
+    CATEGORY_KINDS.forEach(function (kind) {
+      if (Array.isArray(raw[kind])) out[kind] = raw[kind].slice();
+    });
+  }
+  return out;
+}
+
+// Какой список показывать для этого вида операции
+function categoriesFor(type) {
+  return state.categories[type === 'income' ? 'income' : 'expense'];
 }
 
 function load() {
@@ -485,8 +508,10 @@ const elStorageDot   = $('storageDot');
 const elStorageTitle = $('storageTitle');
 const elStorageNote  = $('storageNote');
 const elCatModal     = $('catModal');
-const elCatList      = $('catList');
-const elNewCat       = $('newCat');
+const elCatListExpense = $('catListExpense');
+const elCatListIncome  = $('catListIncome');
+const elNewCatExpense  = $('newCatExpense');
+const elNewCatIncome   = $('newCatIncome');
 const elConfirmModal = $('confirmModal');
 const elConfirmText  = $('confirmText');
 const elToast        = $('toast');
@@ -546,8 +571,10 @@ function openEdit(id) {
   editingId = id;
   entryType = t.type;
 
-  categoryBeforeEdit = selectedCategory;
-  selectedCategory = t.category || '';
+  // Запоминаем, что было выбрано для новых записей, чтобы правка это не сбила
+  const kind = TYPE_INFO[t.type].withCategory ? t.type : null;
+  categoryBeforeEdit = kind ? { kind: kind, value: selectedCategory[kind] } : null;
+  if (kind) selectedCategory[kind] = t.category || '';
 
   elAmount.value = String(t.amount).replace('.', ',');
   elNote.value = t.note || '';
@@ -585,11 +612,12 @@ function closeEntry() {
   elAmount.blur();
 
   // Возвращаем категорию, которая была выбрана для новых записей
-  if (entryMode === 'edit') {
-    selectedCategory = categoryBeforeEdit;
+  if (entryMode === 'edit' && categoryBeforeEdit) {
+    selectedCategory[categoryBeforeEdit.kind] = categoryBeforeEdit.value;
     renderChips();
   }
 
+  categoryBeforeEdit = null;
   entryMode = 'new';
   editingId = null;
   syncTelegramChrome();
@@ -776,7 +804,7 @@ function saveEdit() {
 
   t.amount   = amount;
   t.note     = elNote.value.trim();
-  t.category = TYPE_INFO[t.type].withCategory ? selectedCategory : '';
+  t.category = TYPE_INFO[t.type].withCategory ? selectedCategory[t.type] : '';
 
   save();
   buzz('medium');
@@ -943,7 +971,7 @@ function addTransaction(type) {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
     type: type,
     amount: amount,
-    category: TYPE_INFO[type].withCategory ? selectedCategory : '',
+    category: TYPE_INFO[type].withCategory ? selectedCategory[type] : '',
     note: elNote.value.trim(),
     date: new Date().toISOString()
   });
@@ -1042,11 +1070,16 @@ function rosette(radius, depth, petals, phase) {
 }
 
 // Один и тот же ряд категорий нужен и окну записи, и окну плана
-function renderChipsInto(box, current, onPick) {
+function renderChipsInto(box, list, current, onPick) {
   box.innerHTML = '';
 
   // Первым всегда идёт вариант «Без категории» — он выбран по умолчанию
-  const options = [''].concat(state.categories);
+  const options = [''].concat(list);
+
+  /* Категорию могли удалить уже после того, как операция записана.
+     Показываем её отдельной кнопкой, иначе при правке было бы непонятно,
+     что за название хранится, и оно потерялось бы при сохранении. */
+  if (current && options.indexOf(current) === -1) options.push(current);
 
   options.forEach(function (cat) {
     const btn = document.createElement('button');
@@ -1069,8 +1102,15 @@ function renderChipsInto(box, current, onPick) {
 }
 
 function renderChips() {
-  renderChipsInto(elChips, selectedCategory, function (cat) { selectedCategory = cat; });
-  renderChipsInto(elPlanChips, planCategory, function (cat) { planCategory = cat; });
+  // Переводы в банк категорий не имеют — для них ряд всё равно скрыт
+  const kind = entryType === 'income' ? 'income' : 'expense';
+
+  renderChipsInto(elChips, categoriesFor(entryType), selectedCategory[kind],
+    function (cat) { selectedCategory[kind] = cat; });
+
+  // План — это будущие траты, значит список расходов
+  renderChipsInto(elPlanChips, categoriesFor('expense'), planCategory,
+    function (cat) { planCategory = cat; });
 }
 
 function renderMonth() {
@@ -1449,47 +1489,62 @@ function openCategories() {
 
 function closeCategories() {
   elCatModal.hidden = true;
-  elNewCat.value = '';
+  CATEGORY_KINDS.forEach(function (kind) { catField(kind).value = ''; });
   syncTelegramChrome();
 }
 
+function catBox(kind)   { return kind === 'income' ? elCatListIncome : elCatListExpense; }
+function catField(kind) { return kind === 'income' ? elNewCatIncome  : elNewCatExpense;  }
+
 function renderCatList() {
-  elCatList.innerHTML = '';
+  CATEGORY_KINDS.forEach(function (kind) {
+    const box = catBox(kind);
+    const list = state.categories[kind];
+    box.innerHTML = '';
 
-  if (!state.categories.length) {
-    elCatList.innerHTML = '<p class="empty">Категорий пока нет. Добавь первую ниже.</p>';
-    return;
-  }
+    if (!list.length) {
+      box.innerHTML = '<p class="empty">Пока пусто. Добавь первую ниже.</p>';
+      return;
+    }
 
-  state.categories.forEach(function (cat) {
-    const item = document.createElement('div');
-    item.className = 'cat-item';
-    item.innerHTML = '<span class="cat-name"></span><button class="cat-del">Удалить</button>';
-    item.querySelector('.cat-name').textContent = cat;
-    item.querySelector('.cat-del').onclick = function () {
-      state.categories = state.categories.filter(function (c) { return c !== cat; });
-      if (selectedCategory === cat) selectedCategory = '';   // возвращаемся к «Без категории»
-      save();
-      renderCatList();
-      render();
-    };
-    elCatList.appendChild(item);
+    list.forEach(function (cat) {
+      const item = document.createElement('div');
+      item.className = 'cat-item';
+      item.innerHTML = '<span class="cat-name"></span><button class="cat-del">Удалить</button>';
+      item.querySelector('.cat-name').textContent = cat;
+      item.querySelector('.cat-del').onclick = function () { removeCategory(kind, cat); };
+      box.appendChild(item);
+    });
   });
 }
 
-function addCategory() {
-  const name = elNewCat.value.trim();
+function addCategory(kind) {
+  const field = catField(kind);
+  const name = field.value.trim();
   if (!name) return;
 
-  if (!state.categories.includes(name)) {
-    state.categories.push(name);
+  if (state.categories[kind].indexOf(name) === -1) {
+    state.categories[kind].push(name);
     save();
   }
 
-  elNewCat.value = '';
+  field.value = '';
   renderCatList();
   render();
   buzz();
+}
+
+/* Удаляем только из списка. В уже записанных операциях название остаётся:
+   иначе прошлое молча переписалось бы задним числом. */
+function removeCategory(kind, cat) {
+  state.categories[kind] = state.categories[kind].filter(function (c) { return c !== cat; });
+
+  if (selectedCategory[kind] === cat) selectedCategory[kind] = '';
+  if (kind === 'expense' && planCategory === cat) planCategory = '';
+
+  save();
+  renderCatList();
+  render();
 }
 
 
@@ -1562,9 +1617,13 @@ if (hasMainButton) {
 
 $('btnWithdraw').onclick   = function () { openEntry('withdraw'); };
 $('btnCategories').onclick = openCategories;
-$('btnAddCat').onclick     = addCategory;
-
-elNewCat.addEventListener('keydown', function (e) { if (e.key === 'Enter') addCategory(); });
+// У расходов и доходов своё поле и своя кнопка «Добавить»
+CATEGORY_KINDS.forEach(function (kind) {
+  document.querySelector('[data-add="' + kind + '"]').onclick = function () { addCategory(kind); };
+  catField(kind).addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addCategory(kind);
+  });
+});
 
 elCatModal.querySelectorAll('[data-close]').forEach(function (el) { el.onclick = closeCategories; });
 

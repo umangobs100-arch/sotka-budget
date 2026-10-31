@@ -718,6 +718,9 @@ body {
 
 .cat-add { display: flex; align-items: center; gap: 10px; }
 
+/* Второй список в том же окне — отодвигаем, чтобы не слипся с первым */
+.cat-section { margin-top: 30px; }
+
 .confirm-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
