@@ -33,6 +33,16 @@ const STORAGE_KEY = 'sotka-budget-v1';   // под этим именем дан�
    делать в списке трат. Готовых нет вовсе: список заводит сам человек. */
 const CATEGORY_KINDS = ['expense', 'income'];
 
+/* Номер версии берём прямо из адреса, которым подключён этот файл
+   (app.js?v=25). Так он не разъедется с меткой в index.html.
+   Показываем его в «Хранении»: только так можно понять, доехало ли
+   обновление до телефона, — Telegram подолгу держит старую страницу. */
+const APP_VERSION = (function () {
+  const src = (document.currentScript && document.currentScript.src) || '';
+  const found = /[?&]v=(\d+)/.exec(src);
+  return found ? found[1] : '?';
+})();
+
 // state — это всё, что приложение про тебя знает
 let state = {
   transactions: [],                        // список операций
@@ -507,6 +517,7 @@ const elReportList   = $('reportList');
 const elStorageDot   = $('storageDot');
 const elStorageTitle = $('storageTitle');
 const elStorageNote  = $('storageNote');
+const elStorageVersion = $('storageVersion');
 const elCatModal     = $('catModal');
 const elCatListExpense = $('catListExpense');
 const elCatListIncome  = $('catListIncome');
@@ -1422,6 +1433,7 @@ function setStorageStatus(key) {
   elStorageTitle.textContent = info[0];
   elStorageNote.textContent  = info[2];
   elStorageDot.className = 'storage-dot ' + info[1];
+  elStorageVersion.textContent = 'Версия ' + APP_VERSION;
 }
 
 // Шапка месяца или дня: раскрывает и сворачивает то, что под ней
