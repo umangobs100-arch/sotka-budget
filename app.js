@@ -1096,15 +1096,29 @@ function renderChipsInto(box, list, current, onPick) {
     const btn = document.createElement('button');
     btn.className = 'chip' + (cat === current ? ' is-active' : '');
     btn.textContent = cat === '' ? 'Без категории' : cat;
+
+    /* Нажатие на кнопку по умолчанию забирает фокус у поля — и клавиатура
+       закрывается на полуслове. Отменяем именно смену фокуса: само
+       нажатие после этого срабатывает как обычно. */
+    btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
     btn.onclick = function () {
+      // Ряд сейчас перерисуется целиком — запоминаем, где был курсор
+      const field = document.activeElement;
+      const wasInField = field && (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA');
+
       onPick(cat);
       buzz();
       renderChips();
+
+      // и возвращаем его на место, если перерисовка всё-таки сбила
+      if (wasInField && document.activeElement !== field) field.focus();
     };
     box.appendChild(btn);
   });
 
-  // Последняя кнопка — открыть окно управления категориями
+  /* А вот «+ категория» открывает окно поверх, и там клавиатура только
+     мешает — этой кнопке фокус забрать как раз нужно */
   const add = document.createElement('button');
   add.className = 'chip';
   add.textContent = '+ категория';
