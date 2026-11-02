@@ -1294,7 +1294,7 @@ function monthBlock(key, list) {
     key,
     MONTHS[Number(parts[1]) - 1] + ' ' + parts[0],
     'Доходы ' + money(stats.income) + ' · Расходы ' + money(stats.spent) + bankNote(stats.saved),
-    stats.net
+    [{ text: signedMoney(stats.net), cls: netClass(stats.net) }]
   ));
 
   // Полоса: какую долю доходов месяца съели расходы
@@ -1327,11 +1327,19 @@ function dayBlock(key, list) {
   const box = document.createElement('div');
   box.className = 'period period-day' + (openPeriods[key] ? ' is-open' : '');
 
+  /* У дня доходы и расходы стоят отдельными строками, а не схлопнуты
+     в один итог: в них и смысл дневной сводки. Нулевую сторону
+     не печатаем — пустая строка «0 ₽» только мешает читать. */
+  const values = [];
+  if (stats.income > 0) values.push({ text: '+ ' + money(stats.income), cls: 'sum-earn' });
+  if (stats.spent  > 0) values.push({ text: '− ' + money(stats.spent),  cls: 'sum-ink'  });
+  if (!values.length)   values.push({ text: money(0), cls: 'sum-muted' });
+
   box.appendChild(periodHead(
     key,
     dayLabel(new Date(list[0].date)),
     stats.count + ' ' + plural(stats.count, 'операция', 'операции', 'операций') + bankNote(stats.saved),
-    stats.net
+    values
   ));
 
   if (openPeriods[key]) {
@@ -1450,8 +1458,10 @@ function setStorageStatus(key) {
   elStorageVersion.textContent = 'Версия ' + APP_VERSION;
 }
 
-// Шапка месяца или дня: раскрывает и сворачивает то, что под ней
-function periodHead(key, title, sub, net) {
+/* Шапка месяца или дня: раскрывает и сворачивает то, что под ней.
+   values — что показать справа: у месяца это одна строка с итогом,
+   у дня две, доходы и расходы по отдельности. */
+function periodHead(key, title, sub, values) {
   const head = document.createElement('button');
   head.className = 'period-head';
   head.setAttribute('aria-expanded', openPeriods[key] ? 'true' : 'false');
@@ -1463,9 +1473,13 @@ function periodHead(key, title, sub, net) {
   head.querySelector('.period-title').textContent = title;
   head.querySelector('.period-sub').textContent   = sub;
 
-  const sum = head.querySelector('.period-net');
-  sum.textContent = signedMoney(net);
-  sum.classList.add(netClass(net));
+  const box = head.querySelector('.period-net');
+  values.forEach(function (v) {
+    const line = document.createElement('span');
+    line.className = v.cls;
+    line.textContent = v.text;
+    box.appendChild(line);
+  });
 
   head.onclick = function () {
     openPeriods[key] = !openPeriods[key];

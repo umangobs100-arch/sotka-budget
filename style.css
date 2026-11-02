@@ -630,7 +630,12 @@ body {
   font-size: 11px;
   line-height: 1.5;
 }
+/* Колонка значений справа: у месяца одно, у дня доходы и расходы */
 .period-net {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
