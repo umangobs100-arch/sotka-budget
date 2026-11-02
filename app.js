@@ -514,6 +514,7 @@ const elAllExpense   = $('allExpense');
 const elAllSaved     = $('allSaved');
 const elReportMeta   = $('reportMeta');
 const elReportList   = $('reportList');
+const elCatReport    = $('catReport');
 const elStorageDot   = $('storageDot');
 const elStorageTitle = $('storageTitle');
 const elStorageNote  = $('storageNote');
@@ -1200,8 +1201,12 @@ function renderHistory() {
   });
 }
 
-// Одна строка операции. Нажатие удаляет — одинаково в истории и в отчёте
-function opElement(t) {
+/* Одна строка операции. Нажатие открывает правку — одинаково везде.
+
+   insideCategory — когда строка показана внутри своей же категории:
+   повторять её название незачем, зато нужна дата, ведь такой список
+   тянется через месяцы. */
+function opElement(t, insideCategory) {
   const date = new Date(t.date);
   const info = TYPE_INFO[t.type];
 
@@ -1211,9 +1216,13 @@ function opElement(t) {
     '<span class="op-main"><span class="op-title"></span><span class="op-sub"></span></span>' +
     '<span class="op-sum"></span>';
 
-  op.querySelector('.op-title').textContent = t.category || t.note || info.word;
-  op.querySelector('.op-sub').textContent =
-    (t.category && t.note ? t.note + ' · ' : '') + timeLabel(date);
+  op.querySelector('.op-title').textContent = insideCategory
+    ? (t.note || info.word)
+    : (t.category || t.note || info.word);
+
+  op.querySelector('.op-sub').textContent = insideCategory
+    ? dayLabel(date) + ' · ' + timeLabel(date)
+    : (t.category && t.note ? t.note + ' · ' : '') + timeLabel(date);
 
   const sum = op.querySelector('.op-sum');
   sum.textContent = info.sign + ' ' + money(t.amount);
@@ -1252,6 +1261,9 @@ function bankNote(saved) {
 
 function renderReport() {
   const all = periodStats(state.transactions);
+
+  // Второй разрез тех же операций — рисуем всегда, в том числе пустой
+  renderCategoryReport();
 
   elAllIncome.textContent  = money(all.income);
   elAllExpense.textContent = money(all.spent);
@@ -1431,6 +1443,85 @@ function planElement(p, late) {
 
   row.onclick = function () { openPlan(p.id); };
   return row;
+}
+
+
+/* --- Отчёт по категориям ---
+
+   Второй способ разрезать те же операции: не по времени, а по тому,
+   на что уходят деньги. Период — всё время, как и в блоке наверху. */
+
+function sumOf(list) {
+  return list.reduce(function (s, t) { return s + t.amount; }, 0);
+}
+
+const CATEGORY_SIDES = [
+  { type: 'expense', label: 'Расходы', cls: 'sum-ink',  sign: '− ' },
+  { type: 'income',  label: 'Доходы',  cls: 'sum-earn', sign: '+ ' }
+];
+
+function renderCategoryReport() {
+  elCatReport.innerHTML = '';
+  let anything = false;
+
+  CATEGORY_SIDES.forEach(function (side) {
+    const list = state.transactions.filter(function (t) { return t.type === side.type; });
+    if (!list.length) return;
+    anything = true;
+
+    const head = document.createElement('p');
+    head.className = 'day';
+    head.textContent = side.label;
+    elCatReport.appendChild(head);
+
+    // Операции без категории собираются под пустым ключом — он тоже строка
+    const byCategory = {};
+    list.forEach(function (t) {
+      const key = t.category || '';
+      if (!byCategory[key]) byCategory[key] = [];
+      byCategory[key].push(t);
+    });
+
+    // Крупные траты — выше: с них и начинают разбираться
+    Object.keys(byCategory)
+      .sort(function (a, b) { return sumOf(byCategory[b]) - sumOf(byCategory[a]); })
+      .forEach(function (cat) {
+        elCatReport.appendChild(categoryBlock(side, cat, byCategory[cat]));
+      });
+  });
+
+  if (!anything) {
+    elCatReport.innerHTML =
+      '<p class="empty">Пока нечего разбирать. Категории появятся, как только будут записаны операции.</p>';
+  }
+}
+
+function categoryBlock(side, cat, list) {
+  // Свой ключ раскрытия, чтобы не столкнуться с месяцами и днями
+  const key = 'cat:' + side.type + ':' + cat;
+
+  const box = document.createElement('div');
+  box.className = 'period' + (openPeriods[key] ? ' is-open' : '');
+
+  box.appendChild(periodHead(
+    key,
+    cat || 'Без категории',
+    list.length + ' ' + plural(list.length, 'операция', 'операции', 'операций'),
+    [{ text: side.sign + money(sumOf(list)), cls: side.cls }]
+  ));
+
+  if (openPeriods[key]) {
+    const body = document.createElement('div');
+    body.className = 'period-body';
+
+    list.slice()
+      .sort(function (a, b) { return new Date(b.date) - new Date(a.date); })
+      .forEach(function (t) { body.appendChild(opElement(t, true)); });
+
+    box.appendChild(body);
+  }
+
+  return box;
 }
 
 
